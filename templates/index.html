@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ title }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Element-UI CDN -->
+    <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css">
+    <style>
+        /* 修改 logo 相关样式 */
+        .logo { 
+            width: 100%; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            margin-top: 100px; /* 原来是 200px，现在减半 */
+        }
+        .logo img { 
+            width: 40%; /* 从 100% 改为 40% */
+            margin-top: 0; /* 移除顶部空白 */
+            user-select: none; 
+        }
+        
+        /* 其他样式保持不变 */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        #app { 
+            display: flex; 
+            justify-content: flex-start; 
+            align-items: center; 
+            flex-direction: column; 
+            min-height: 100vh; 
+            margin-top: 0; 
+        }
+        .input_search { width: 45%; margin-top: 0; display: flex; align-items: center; justify-content: center; }
+        .input_search input { width: 85%; height: 45px; padding-right: 20px; border: 1px solid #888; border-right: none; border-radius: 7px 0 0 7px; font-size: 16px; color: #363636; outline: none; text-indent: 0.7em; }
+        .input_search input::placeholder { color: #979797; font-size: 14px; }
+        .input_search button { width: 15%; height: 45px; border: none; background-color: #1296db; border-radius: 0 7px 7px 0; font-size: 14px; cursor: pointer; position: relative; letter-spacing: 0.1em; color: #fff; padding: 2px 4px; outline: none; user-select: none; }
+        .use-info { width: 44.5%; user-select: none; }
+        @media screen and (max-width: 600px) {
+            .logo { width: 55%; }
+            .logo img { width: 50%; }
+            .input_search { width: 90%; }
+            .input_search input { width: 85%; height: 40px; }
+            .input_search button { width: 15%; height: 40px; }
+            .use-info { width: 89%; }
+        }
+        .el-collapse-item__header { border: none; }
+        .el-collapse-item__content { padding-bottom: 7px; }
+        .el-collapse-item__content p { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #888; padding: 0 0 10px 0; }
+        .el-collapse-item__content a { display: inline-block; background-color: #eee; color: #1296db; font-weight: 700; padding: 0px 10px; border-radius: 100px; margin-right: 20px; height: 21px; line-height: 21px; font-size: 12px; text-decoration: none; transition: background-color 0.3s, color 0.1s; }
+        .el-collapse-item__content a:hover { background-color: #1296db; color: #fcfcfc; }
+        .el-progress-bar__inner { background-color: #1296db; }
+        .el-progress-bar { padding-top: 12px; }
+        .el-progress__text { margin-left: 12px; }
+        .part-scroll {
+            max-height: 220px;
+            min-height: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+            margin-bottom: 10px;
+            transition: max-height 0.2s;
+        }
+        .part-item {
+            display: flex;
+            align-items: center;
+            background: #f7f7f7;
+            border-radius: 6px;
+            padding: 4px 8px;
+            min-height: 32px;
+            box-sizing: border-box;
+            width: 100%;
+        }
+        .part-title {
+            flex: 1 1 0;
+            font-size: 13px;
+            color: #333;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 100%;
+        }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div class="logo">
+        <img src="/assets/bd.png" draggable="false" />
+    </div>
+    <div class="input_search">
+        <input type="text" placeholder="请输入视频链接..." v-model="videoUrl" ref="videoInput" />
+        <button id="getBtn">获取</button>
+    </div>
+    <div class="use-info">
+        <el-collapse :accordion="true" v-model="activeNames">
+            <el-collapse-item v-show="downloadUrl !== '' && videoUrl !== ''" title="视频地址" name="视频地址">
+                <p>{{downloadUrl}}</p>
+                <p>
+                    <a :href="downloadUrl" target="_blank" v-if="downloadUrl">预览视频</a>
+                    <a href v-show="downVideoStatus === false" @click.prevent="downVideo">下载视频</a>
+                    <a href v-show="downVideoStatus === true" @click.prevent="cancelDownload">取消下载</a>
+                    <el-progress v-show="downVideoStatus === true" :percentage="progress"></el-progress>
+                </p>
+            </el-collapse-item>
+            <el-collapse-item v-show="bgUrl !== '' && videoUrl !== ''" title="封面地址" name="2">
+                <p>{{imgUrl}}</p>
+                <p>
+                    <a rel="noreferrer" :href="imgUrl" target="_blank">预览图片</a>
+                </p>
+            </el-collapse-item>
+            <el-collapse-item v-show="pages.length > 1 && videoUrl !== ''" title="分集下载" name="分集下载">
+                <div class="part-scroll">
+                    <el-row :gutter="10" type="flex" style="flex-wrap: wrap;">
+                        <el-col :span="12" v-for="(item, idx) in pages" :key="item.cid" style="margin-bottom: 8px; display: flex; justify-content: center;">
+                            <div class="part-item">
+                                <input type="checkbox" v-model="selectedVideos" :value="item.cid" />
+                                <span class="part-title">P{{'{{'}}item.page{{'}}'}} {{'{{'}}item.part{{'}}'}}</span>
+                                <el-button size="mini" @click="fillPartUrl(item)" style="margin-left: 8px;">跳转分集</el-button>
+                            </div>
+                        </el-col>
+                    </el-row>
+                </div>
+                <div style="margin-top: 10px; text-align: center;">
+                    <el-button type="info" @click="toggleSelectAll" style="margin-right: 10px;">{{'{{'}}isAllSelected ? '取消全选' : '全选'{{'}}'}}</el-button>
+                    <el-button type="primary" @click="downloadSelected" :loading="batchDownloading">批量下载</el-button>
+                    <div v-if="batchDownloading" style="margin-top: 10px;">
+                        <el-progress :percentage="batchProgress" :format="batchProgressFormat"></el-progress>
+                        <p style="font-size: 12px; color: #666; margin-top: 5px;">正在下载: {{'{{'}}currentDownloading{{'}}'}}</p>
+                    </div>
+                </div>
+            </el-collapse-item>
+            <el-collapse-item title="使用说明" name="3">
+                <p>1. 手机，复制视频链接即可</p>
+                <p>2. 手机分集视频，分享在浏览器打开，再复制地址栏链接下载</p>
+                <p>3. 电脑，复制地址栏地址即可</p>
+                <p>4. 如果不行就是作者不允许下载</p>
+                <p>5. 图片可以长按进行保存</p>
+                <p>6. 电脑可用Ctrl+B快速清空输入</p>
+                <p>7. 作者很棒，<a href="https://space.bilibili.com/3546614731901698" target="_blank">关注作者</a></p>
+                <p>8. 原作者也很棒，<a href="https://space.bilibili.com/1608325226" target="_blank">关注原作者</a></p>
+            </el-collapse-item>
+        </el-collapse>
+    </div>
+    <el-button type="text" @click="goToFeedback" style="margin-top: 20px;">问题反馈</el-button>
+</div>
+
+<!-- Vue & Element-UI CDN -->
+<script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.min.js"></script>
+<script src="https://unpkg.com/element-ui/lib/index.js"></script>
+<!-- axios CDN -->
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script>
+    axios.defaults.baseURL = "";
+    let source;
+    new Vue({
+        el: '#app',
+        data() {
+            return {
+                activeNames: "",
+                videoUrl: "",
+                bgUrl: "",
+                videoName: "",
+                bv: "",
+                avid: "",
+                cid: "",
+                p: "",
+                downloadUrl: "",
+                loading: 0,
+                progress: 0,
+                downVideoStatus: false,
+                pages: [],
+                selectedVideos: [],
+                isAllSelected: false,
+                batchDownloading: false,
+                batchProgress: 0,
+                currentDownloading: "",
+                batchTimer: null,
+                info: Object.freeze({
+                    version: "2.0",
+                    origin_author: "王子周棋洛✨",
+                    author: "Codete2",
+                    name: "BiliBili视频下载",
+                    desc: "此版本为原Bilidown的重制版",
+                    link: "https://bilidown.codetea.top"
+                })
+            }
+        },
+        computed: {
+            imgUrl() {
+                if (!this.bgUrl) return "";
+                return this.bgUrl.startsWith("http") ? this.bgUrl.replace(/^http:/, "https:") : this.bgUrl;
+            },
+            batchProgressFormat(percentage) {
+                return percentage === 100 ? '完成' : `${percentage}%`;
+            }
+        },
+        mounted() {
+            document.body.addEventListener("keydown", e => {
+                if (e.ctrlKey && e.keyCode == 66) {
+                    this.videoUrl = "";
+                }
+            });
+            setTimeout(() => {
+                this.$notify({
+                    title: "欢迎使用",
+                    message: "欢迎使用本工具，愿你有个好心情✨",
+                    type: "success",
+                    duration: 2500
+                });
+            }, 200);
+            document.querySelector("input").focus();
+            this.printInfo();
+            // 绑定按钮事件
+            document.getElementById("getBtn").onclick = this.download;
+        },
+        methods: {
+            cancelDownload() {
+                if (source) {
+                    source.cancel('Operation canceled by the user.');
+                }
+                this.progress = 0;
+                this.downVideoStatus = false;
+            },
+            downVideo() {
+                this.loading = 0;
+                this.$notify.closeAll();
+                this.$notify({
+                    title: "下载中",
+                    message: "视频正在下载中，请等待进度条...",
+                    iconClass: "el-icon-loading",
+                    duration: this.loading
+                });
+                source = axios.CancelToken.source();
+                this.downVideoStatus = true;
+                axios.get(this.downloadUrl, {
+                    responseType: "blob",
+                    cancelToken: source.token,
+                    onDownloadProgress: evt => {
+                        this.progress = parseInt((evt.loaded / evt.total) * 100);
+                    }
+                }).then(resp => {
+                    this.loading = 5;
+                    let blobUrl = window.URL.createObjectURL(resp.data);
+                    let a = document.createElement("a");
+                    a.download = `${this.videoName}` + ".mp4";
+                    a.href = blobUrl;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(blobUrl);
+                    this.$notify.closeAll();
+                    setTimeout(() => {
+                        this.$notify({
+                            title: "下载成功",
+                            message: "视频下载成功！",
+                            type: "success",
+                            duration: 2000
+                        });
+                    }, 1000);
+                }).catch((error) => {
+                    if (error.message == 'Operation canceled by the user.') {
+                        this.$notify.closeAll();
+                        this.$notify({
+                            title: "已取消",
+                            message: "视频下载已取消。",
+                            type: "success",
+                            duration: 2000
+                        });
+                    }
+                })
+            },
+            fillPartUrl(row) {
+                let url = this.videoUrl;
+                if (!url.includes("?p=")) {
+                    if (url.endsWith("/")) url = url.slice(0, -1);
+                    url = url + "?p=" + row.page;
+                } else {
+                    url = url.replace(/(\?p=)\d+/, "$1" + row.page);
+                }
+                this.videoUrl = url;
+                this.$nextTick(() => {
+                    console.log("赋值后 videoUrl:", this.videoUrl);
+                    console.log("input实际内容:", this.$refs.videoInput.value);
+                });
+                setTimeout(() => {
+                    this.download();
+                }, 100);
+            },
+            change() {
+                this.cancelDownload();
+                if (this.bgUrl) {
+                    this.bgUrl = "";
+                    this.progress = 0;
+                    this.downVideoStatus = false;
+                }
+                if (this.downloadUrl) {
+                    this.downloadUrl = "";
+                    this.progress = 0;
+                    this.downVideoStatus = false;
+                }
+                this.pages = [];
+            },
+            download() {
+                this.change();
+                this.parseUrl();
+                if (this.bv) this.getAvidCidByBv();
+            },
+            parseUrl() {
+                this.loading = 0;
+                if (this.videoUrl !== "") {
+                    if (this.videoUrl.includes("?p=")) {
+                        try {
+                            this.p = this.videoUrl.split("?p=")[1].split("&")[0];
+                            this.bv = this.videoUrl.split("/video/")[1].split("?")[0].replace(/\//g, "");
+                        } catch {
+                            this.$notify.closeAll();
+                            this.$notify({
+                                title: "bv获取失败",
+                                message: "很糟糕，bv获取失败了！请检查链接",
+                                type: "error",
+                                duration: 2000
+                            });
+                            return "";
+                        }
+                    } else if (this.videoUrl.includes("https://b23.tv")) {
+                        if (this.videoUrl.startsWith("【")) {
+                            this.videoUrl = this.videoUrl.split("】 ")[1];
+                        }
+                        this.$notify.closeAll();
+                        this.$notify({
+                            title: "解析中",
+                            message: "正在解析手机端链接...",
+                            duration: this.loading,
+                            iconClass: "el-icon-loading"
+                        });
+                        axios.get("/move?url=" + this.videoUrl).then(resp => {
+                            if (resp.data) {
+                                this.videoUrl = resp.data.split(`<meta data-vue-meta="true" itemprop="url" content="`)[1].split(`/">`)[0];
+                                this.loading = 5;
+                                this.$notify.closeAll();
+                                this.$notify({
+                                    title: "解析成功",
+                                    message: "手机端链接成功，准备解析下载地址...",
+                                    type: "success",
+                                    duration: 1500
+                                });
+                                setTimeout(() => this.download(), 1500);
+                            } else {
+                                this.$notify.closeAll();
+                                this.$notify({
+                                    title: "解析失败",
+                                    message: "很糟糕，解析失败了...",
+                                    type: "error",
+                                    duration: 2000
+                                });
+                            }
+                        });
+                    } else {
+                        try {
+                            this.bv = this.videoUrl.split("/video/")[1].split("?")[0].replace(/\//g, "");
+                        } catch {
+                            this.$notify.closeAll();
+                            this.$notify({
+                                title: "bv获取失败",
+                                message: "很糟糕，bv获取失败了！请检查链接",
+                                type: "error",
+                                duration: 2000
+                            });
+                            return "";
+                        }
+                    }
+                } else {
+                    this.$notify.closeAll();
+                    this.$notify({
+                        title: "错误提示",
+                        message: "链接不能为空！请检查链接后重试",
+                        type: "error",
+                        duration: 2000
+                    });
+                }
+            },
+            getAvidCidByBv() {
+                this.loading = 0;
+                this.bgUrl = "";
+                this.downloadUrl = "";
+                this.pages = [];
+                this.$notify.closeAll();
+                this.$notify({
+                    title: "请求中",
+                    message: "正在请求avid和cid...",
+                    duration: this.loading,
+                    iconClass: "el-icon-loading"
+                });
+                axios.get(`/av/${this.bv}`).then(resp => {
+                    if (resp.data.code == 0) {
+                        this.videoName = resp.data.data.title;
+                        this.avid = resp.data.data.aid;
+                        this.bgUrl = resp.data.data.pic;
+                        this.pages = (resp.data.data.pages || []).map(item => ({
+                            ...item,
+                            cid: item.cid || item.episode_id
+                        }));
+                        console.log("分集数据：", this.pages);
+                        if (this.p) {
+                            try {
+                                let pages = resp.data.data.pages;
+                                this.cid = pages[this.p - 1].cid;
+                            } catch {
+                                this.$notify.closeAll();
+                                this.$notify.error({
+                                    title: "错误",
+                                    message: "bv解析错误，请检查链接...",
+                                    duration: 2000
+                                });
+                                return;
+                            }
+                        } else {
+                            this.cid = resp.data.data.pages[0].cid;
+                        }
+                        this.loading = 5;
+                        this.getDownloadUrl();
+                    }
+                    if (resp.data.code == "-400") {
+                        this.$notify.closeAll();
+                        this.$notify.error({
+                            title: "错误",
+                            message: "bv解析错误，请检查链接...",
+                            duration: 2000
+                        });
+                    }
+                });
+            },
+            getDownloadUrl() {
+                if (!this.avid || !this.cid) {
+                    this.$notify.error({
+                        title: "错误",
+                        message: "avid或cid缺失，无法获取下载地址！",
+                        duration: 2000
+                    });
+                    return;
+                }
+                axios.get(`/download/${this.avid}/${this.cid}`).then(resp => {
+                    this.downloadUrl = resp.data.data.durl[0].url;
+                    if (this.downloadUrl) {
+                        this.$notify.closeAll();
+                        this.$notify({
+                            title: "成功",
+                            message: "视频和封面请求成功，快去下载吧",
+                            type: "success",
+                            duration: 2500
+                        });
+                        setTimeout(() => {
+                            this.activeNames = "视频地址";
+                        }, 250);
+                        setTimeout(() => {
+                            this.bv = "";
+                            this.p = "";
+                            this.avid = "";
+                            this.cid = "";
+                        }, 1500);
+                    }
+                });
+            },
+            printInfo() {
+                console.log(`version: ${this.info.version}`);
+                console.log(`author   : ${this.info.author}`);
+                console.log(`origin author : ${this.info.origin_author}`);
+                console.log(`name   : ${this.info.name}`);
+                console.log(`desc   : ${this.info.desc}`);
+                console.log(`link   : ${this.info.link}`);
+            },
+            extractBvid(url) {
+                // 支持 https://www.bilibili.com/video/BVxxxxxx 或 b23.tv 短链跳转后的链接
+                const match = url.match(/\/video\/(BV\w+)/i);
+                return match ? match[1] : '';
+            },
+            downloadSelected() {
+                if (this.selectedVideos.length === 0) {
+                    this.$notify.error({
+                        title: "错误",
+                        message: "请至少选择一个视频进行下载！",
+                        duration: 2000
+                    });
+                    return;
+                }
+                const bvid = this.extractBvid(this.videoUrl);
+                if (!bvid) {
+                    this.$notify.error({
+                        title: "错误",
+                        message: "无法识别BV号，请检查视频链接！",
+                        duration: 2000
+                    });
+                    return;
+                }
+                
+                this.batchDownloading = true;
+                this.batchProgress = 0;
+                this.currentDownloading = '准备下载...';
+                
+                const selectedPages = this.pages
+                    .filter(item => this.selectedVideos.includes(item.cid))
+                    .map(item => item.page);
+                    
+                // 使用新的 UUID 生成方法
+                const taskId = generateUUID();
+                
+                // 开始轮询进度
+                this.startProgressPolling(taskId);
+                
+                axios.post('/download/batch', {
+                    bvid: bvid,
+                    pages: selectedPages,
+                    task_id: taskId
+                }, { 
+                    responseType: 'blob',
+                    timeout: 300000  // 5分钟超时
+                })
+                .then(response => {
+                    this.stopProgressPolling();
+                    const blob = new Blob([response.data], { type: 'application/zip' });
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'videos.zip';
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    this.batchDownloading = false;
+                    this.$notify.success({
+                        title: "下载完成",
+                        message: "所有视频已打包下载完成！",
+                        duration: 2000
+                    });
+                })
+                .catch(error => {
+                    this.stopProgressPolling();
+                    this.batchDownloading = false;
+                    this.$notify.error({
+                        title: "下载失败",
+                        message: error.response?.data?.error || "无法下载选中的视频，请重试。",
+                        duration: 2000
+                    });
+                });
+            },
+            startProgressPolling(taskId) {
+                this.batchTimer = setInterval(() => {
+                    axios.get(`/download/progress/${taskId}`)
+                        .then(response => {
+                            const { progress, current } = response.data;
+                            this.batchProgress = progress;
+                            this.currentDownloading = current || '正在下载...';
+                        })
+                        .catch(() => {
+                            // 忽略轮询错误
+                        });
+                }, 1000); // 每秒更新一次
+            },
+            stopProgressPolling() {
+                if (this.batchTimer) {
+                    clearInterval(this.batchTimer);
+                    this.batchTimer = null;
+                }
+            },
+            toggleSelectAll() {
+                if (this.isAllSelected) {
+                    this.selectedVideos = [];
+                } else {
+                    this.selectedVideos = this.pages.map(item => item.cid);
+                }
+                this.isAllSelected = !this.isAllSelected;
+            },
+            goToFeedback() {
+                window.location.href = '/feedback';
+            }
+        }
+    });
+
+    // 添加 UUID 生成函数
+    function generateUUID() {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random() * 16 | 0,
+                v = c == 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    }
+</script>
+</body>
+</html> 

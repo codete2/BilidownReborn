@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>管理员面板 - {{ title }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        #app { 
+            padding: 20px;
+            background-color: #f5f7fa;
+            min-height: 100vh;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+        }
+        .logo img {
+            width: 150px;
+            user-select: none;
+        }
+        .feedback-list {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 12px 0 rgba(0,0,0,0.1);
+        }
+        .feedback-item {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #ebeef5;
+            border-radius: 4px;
+        }
+        .feedback-item:hover {
+            background-color: #f5f7fa;
+        }
+        .feedback-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        .feedback-content {
+            margin: 10px 0;
+            white-space: pre-wrap;
+        }
+        .feedback-images {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .feedback-images img {
+            max-width: 200px;
+            max-height: 200px;
+            object-fit: cover;
+            border-radius: 4px;
+        }
+        .temp-management {
+            margin: 20px;
+        }
+        .temp-info {
+            margin-bottom: 20px;
+        }
+        .temp-info p {
+            margin: 10px 0;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div class="header">
+        <div class="logo">
+            <img src="/assets/bd.png" draggable="false" />
+            <h2 style="margin-left: 20px;">管理员面板</h2>
+        </div>
+        <el-button type="danger" @click="logout">退出登录</el-button>
+    </div>
+    
+    <div class="feedback-list">
+        <el-tabs v-model="activeTab">
+            <el-tab-pane label="反馈列表" name="list">
+                <div v-for="feedback in feedbacks" :key="feedback.timestamp" class="feedback-item">
+                    <div class="feedback-header">
+                        <div>
+                            <span style="font-weight: bold;">邮箱：</span>{{'{{'}}feedback.email{{'}}'}}
+                            <span style="margin-left: 20px; color: #666;">{{'{{'}}formatDate(feedback.timestamp){{'}}'}}</span>
+                        </div>
+                        <el-button type="danger" size="small" @click="deleteFeedback(feedback)">删除</el-button>
+                    </div>
+                    <div class="feedback-content">{{'{{'}}feedback.content{{'}}'}}</div>
+                    <div v-if="feedback.images && feedback.images.length" class="feedback-images">
+                        <el-image 
+                            v-for="image in feedback.images" 
+                            :key="image"
+                            :src="'/feedback/' + feedback.folder + '/' + image"
+                            :preview-src-list="getPreviewList(feedback)"
+                            fit="cover">
+                        </el-image>
+                    </div>
+                </div>
+            </el-tab-pane>
+            <el-tab-pane label="存储空间" name="storage">
+                <el-card>
+                    <div slot="header">
+                        <span>存储空间使用情况</span>
+                    </div>
+                    <el-progress :percentage="storageUsage" :format="storageFormat"></el-progress>
+                    <p style="margin-top: 10px; color: #666;">
+                        已使用：{{'{{'}}formatSize(usedSpace){{'}}'}} / 总容量：2GB
+                    </p>
+                </el-card>
+            </el-tab-pane>
+            <el-tab-pane label="IP 管理" name="ips">
+                <el-card>
+                    <div slot="header">
+                        <span>IP 请求管理</span>
+                    </div>
+                    <el-table :data="ipList" style="width: 100%">
+                        <el-table-column prop="ip" label="IP 地址"></el-table-column>
+                        <el-table-column prop="requests" label="当前请求数"></el-table-column>
+                        <el-table-column prop="violations" label="违规次数"></el-table-column>
+                        <el-table-column prop="banned" label="状态">
+                            <template slot-scope="scope">
+                                <el-tag :type="scope.row.banned ? 'danger' : 'success'">
+                                    {{'{{'}}scope.row.banned ? '已封禁' : '正常'{{'}}'}}
+                                </el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="unban_time" label="解封时间"></el-table-column>
+                        <el-table-column label="操作">
+                            <template slot-scope="scope">
+                                <el-button 
+                                    v-if="!scope.row.banned"
+                                    type="danger" 
+                                    size="small" 
+                                    @click="banIP(scope.row.ip)">
+                                    封禁
+                                </el-button>
+                                <el-button 
+                                    v-else
+                                    type="success" 
+                                    size="small" 
+                                    @click="unbanIP(scope.row.ip)">
+                                    解封
+                                </el-button>
+                            </template>
+                        </el-table-column>
+                    </el-table>
+                </el-card>
+            </el-tab-pane>
+            <el-tab-pane label="系统配置" name="config">
+                <el-card>
+                    <div slot="header">
+                        <span>系统配置</span>
+                    </div>
+                    <el-form :model="config" label-width="120px">
+                        <el-form-item label="IP 请求限制">
+                            <el-input-number v-model="config.ip_management.request_limit" :min="1" :max="1000"></el-input-number>
+                            <span class="el-form-item__description">每分钟最大请求次数</span>
+                        </el-form-item>
+                        <el-form-item label="封禁时长">
+                            <el-input-number v-model="config.ip_management.ban_duration" :min="60" :step="60"></el-input-number>
+                            <span class="el-form-item__description">秒</span>
+                        </el-form-item>
+                        <el-form-item label="封禁阈值">
+                            <el-input-number v-model="config.ip_management.ban_threshold" :min="1" :max="10"></el-input-number>
+                            <span class="el-form-item__description">触发封禁的违规次数</span>
+                        </el-form-item>
+                        <el-form-item label="存储空间限制">
+                            <el-input-number v-model="config.storage.max_size" :min="1024" :step="1024"></el-input-number>
+                            <span class="el-form-item__description">MB</span>
+                        </el-form-item>
+                        <el-form-item>
+                            <el-button type="primary" @click="saveConfig">保存配置</el-button>
+                        </el-form-item>
+                    </el-form>
+                </el-card>
+            </el-tab-pane>
+            <el-tab-pane label="临时文件管理" name="temp">
+                <div class="temp-management">
+                    <el-card class="box-card">
+                        <div slot="header" class="clearfix">
+                            <span>临时文件状态</span>
+                            <el-button style="float: right; padding: 3px 0" type="text" @click="refreshTempInfo">刷新</el-button>
+                        </div>
+                        <div class="temp-info">
+                            <p>临时文件数量：{{'{{'}} fileCount {{'}}'}} 个</p>
+                            <p>占用空间：{{'{{'}} formatSize(tempInfo.total_size) {{'}}'}}</p>
+                        </div>
+                        <el-button type="danger" @click="cleanupTemp" :loading="cleaningTemp">
+                            清理临时文件
+                        </el-button>
+                    </el-card>
+                </div>
+            </el-tab-pane>
+        </el-tabs>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.min.js"></script>
+<script src="https://unpkg.com/element-ui/lib/index.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script>
+new Vue({
+    el: '#app',
+    data() {
+        return {
+            activeTab: 'list',
+            feedbacks: [],
+            usedSpace: 0,
+            storageUsage: 0,
+            ipList: [],
+            ipTimer: null,
+            config: {
+                ip_management: {
+                    request_limit: 60,
+                    ban_duration: 36000,
+                    ban_threshold: 3
+                },
+                storage: {
+                    max_size: 2048
+                }
+            },
+            tempInfo: {
+                file_count: 0,
+                total_size: 0
+            },
+            cleaningTemp: false,
+            autoRefreshInterval: null
+        }
+    },
+    computed: {
+        fileCount() {
+            return this.tempInfo.file_count || 0;
+        }
+    },
+    mounted() {
+        this.loadFeedbacks();
+        this.loadStorageInfo();
+        this.loadIPStatus();
+        this.loadConfig();
+        this.ipTimer = setInterval(this.loadIPStatus, 5000);  // 每5秒更新一次
+        this.refreshTempInfo();
+        this.startAutoRefresh();
+    },
+    beforeDestroy() {
+        if (this.ipTimer) {
+            clearInterval(this.ipTimer);
+        }
+        this.stopAutoRefresh();
+    },
+    methods: {
+        loadFeedbacks() {
+            axios.get('/admin/feedbacks')
+                .then(response => {
+                    this.feedbacks = response.data;
+                })
+                .catch(() => {
+                    this.$message.error('加载反馈列表失败');
+                });
+        },
+        loadStorageInfo() {
+            axios.get('/admin/storage')
+                .then(response => {
+                    this.usedSpace = response.data.used;
+                    this.storageUsage = (response.data.used / (2 * 1024 * 1024 * 1024)) * 100;
+                })
+                .catch(() => {
+                    this.$message.error('加载存储信息失败');
+                });
+        },
+        formatDate(timestamp) {
+            const date = new Date(timestamp.replace(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/, '$1-$2-$3 $4:$5:$6'));
+            return date.toLocaleString();
+        },
+        formatSize(size) {
+            if (size === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(size) / Math.log(k));
+            return parseFloat((size / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        },
+        storageFormat(percentage) {
+            return `${percentage.toFixed(2)}%`;
+        },
+        getPreviewList(feedback) {
+            return feedback.images.map(image => '/feedback/' + feedback.folder + '/' + image);
+        },
+        deleteFeedback(feedback) {
+            this.$confirm('确定要删除这条反馈吗？', '提示', {
+                type: 'warning'
+            }).then(() => {
+                axios.delete(`/admin/feedback/${feedback.folder}`)
+                    .then(() => {
+                        this.$message.success('删除成功');
+                        this.loadFeedbacks();
+                        this.loadStorageInfo();
+                    })
+                    .catch(() => {
+                        this.$message.error('删除失败');
+                    });
+            }).catch(() => {});
+        },
+        logout() {
+            axios.post('/admin/logout')
+                .then(() => {
+                    window.location.href = '/admin/login';
+                });
+        },
+        loadIPStatus() {
+            axios.get('/admin/ips')
+                .then(response => {
+                    this.ipList = Object.entries(response.data).map(([ip, data]) => ({
+                        ip,
+                        ...data
+                    }));
+                })
+                .catch(() => {
+                    this.$message.error('加载 IP 状态失败');
+                });
+        },
+        banIP(ip) {
+            this.$confirm('确定要封禁该 IP 吗？', '提示', {
+                type: 'warning'
+            }).then(() => {
+                axios.post(`/admin/ip/${ip}`, { action: 'ban' })
+                    .then(() => {
+                        this.$message.success('封禁成功');
+                        this.loadIPStatus();
+                    })
+                    .catch(() => {
+                        this.$message.error('封禁失败');
+                    });
+            }).catch(() => {});
+        },
+        unbanIP(ip) {
+            axios.post(`/admin/ip/${ip}`, { action: 'unban' })
+                .then(() => {
+                    this.$message.success('解封成功');
+                    this.loadIPStatus();
+                })
+                .catch(() => {
+                    this.$message.error('解封失败');
+                });
+        },
+        loadConfig() {
+            axios.get('/admin/config')
+                .then(response => {
+                    this.config = response.data;
+                })
+                .catch(() => {
+                    this.$message.error('加载配置失败');
+                });
+        },
+        saveConfig() {
+            axios.post('/admin/config', this.config)
+                .then(() => {
+                    this.$message.success('配置已保存');
+                })
+                .catch(() => {
+                    this.$message.error('保存配置失败');
+                });
+        },
+        refreshTempInfo() {
+            axios.get('/admin/temp/info')
+                .then(response => {
+                    this.tempInfo = response.data;
+                })
+                .catch(error => {
+                    this.$message.error('获取临时文件信息失败');
+                });
+        },
+        cleanupTemp() {
+            this.$confirm('确定要清理所有临时文件吗？', '提示', {
+                confirmButtonText: '确定',
+                cancelButtonText: '取消',
+                type: 'warning'
+            }).then(() => {
+                this.cleaningTemp = true;
+                axios.post('/admin/cleanup/temp')
+                    .then(response => {
+                        this.$message.success(response.data.message);
+                        this.refreshTempInfo();
+                    })
+                    .catch(error => {
+                        this.$message.error('清理临时文件失败');
+                    })
+                    .finally(() => {
+                        this.cleaningTemp = false;
+                    });
+            }).catch(() => {});
+        },
+        startAutoRefresh() {
+            this.autoRefreshInterval = setInterval(() => {
+                this.refreshTempInfo();
+            }, 30000); // 每30秒刷新一次
+        },
+        stopAutoRefresh() {
+            if (this.autoRefreshInterval) {
+                clearInterval(this.autoRefreshInterval);
+                this.autoRefreshInterval = null;
+            }
+        }
+    }
+});
+</script>
+</body>
+</html> 

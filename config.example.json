@@ -1,0 +1,15 @@
+{
+    "secret_key": "your-secret-key-here",
+    "admin": {
+        "salt": "your-salt-here",
+        "password_hash": "your-password-hash-here"
+    },
+    "ip_management": {
+        "request_limit": 60,
+        "ban_duration": 3600,
+        "ban_threshold": 5
+    },
+    "storage": {
+        "max_size": 1073741824
+    }
+}
